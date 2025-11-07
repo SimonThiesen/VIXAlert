@@ -5,9 +5,21 @@ Hourly GitHub Actions workflow that checks the CBOE Volatility Index (VIX) and s
 ## How it works
 
 1. Workflow triggers every hour (top of the hour) via cron or manually via *Run Workflow*.
-2. Python script `vix_alert.py` downloads the latest VIX data using `yfinance`.
+2. Python script `vix_alert.py` downloads the latest VIX data using multiple sources (see Data Sources below).
 3. Script prints a JSON payload to stdout and sets GitHub Action outputs (`vix_value`, `vix_exceeded`).
-4. If `exceeded == true` the email step runs and sends an alert.
+4. If `exceeded == true` the Telegram step runs and sends a notification.
+
+## Data Sources
+
+The script tries multiple sources in order until one succeeds:
+1. **yfinance** intraday (1-minute data)
+2. **yfinance** daily (5-day history)
+3. **CNBC** (web scraping from CNBC.com)
+4. **Investing.com** (web scraping)
+5. **Yahoo Finance** direct API (with custom headers)
+6. **CBOE** official API
+
+Each source has 3 retry attempts with 2-second delays. This ensures high reliability even if some sources are rate-limited or temporarily unavailable.
 
 ## GitHub Actions Workflow
 

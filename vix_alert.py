@@ -77,10 +77,15 @@ def _yf_daily() -> Optional[Tuple[float, str]]:
 
 
 def _yahoo_direct() -> Optional[Tuple[float, str]]:
+    """Yahoo Finance API with custom user agent to reduce rate limiting."""
     import requests
     url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=%5EVIX"
-    resp = requests.get(url, timeout=10)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    resp = requests.get(url, headers=headers, timeout=10)
     if resp.status_code != 200:
+        logger.debug("Yahoo direct status %d", resp.status_code)
         return None
     try:
         data = resp.json()
@@ -91,6 +96,58 @@ def _yahoo_direct() -> Optional[Tuple[float, str]]:
                 return round(float(price), 2), "yahoo-direct"
     except Exception as exc:  # pragma: no cover
         logger.debug("Yahoo direct parse error: %s", exc)
+    return None
+
+
+def _cnbc_scrape() -> Optional[Tuple[float, str]]:
+    """Scrape VIX from CNBC website."""
+    import requests
+    from bs4 import BeautifulSoup
+    url = "https://www.cnbc.com/quotes/.VIX"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.text, 'lxml')
+        # Look for quote price
+        price_elem = soup.select_one('span.QuoteStrip-lastPrice')
+        if price_elem:
+            price_text = price_elem.text.strip().replace(',', '')
+            value = float(price_text)
+            return round(value, 2), "cnbc-scrape"
+    except Exception as exc:  # pragma: no cover
+        logger.debug("CNBC scrape error: %s", exc)
+    return None
+
+
+def _investing_scrape() -> Optional[Tuple[float, str]]:
+    """Scrape VIX from Investing.com."""
+    import requests
+    from bs4 import BeautifulSoup
+    url = "https://www.investing.com/indices/volatility-s-p-500"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.text, 'lxml')
+        # Multiple possible selectors
+        for selector in ['[data-test="instrument-price-last"]', '.text-2xl', 'span[class*="text-5xl"]']:
+            elem = soup.select_one(selector)
+            if elem:
+                price_text = elem.text.strip().replace(',', '')
+                try:
+                    value = float(price_text)
+                    return round(value, 2), "investing-scrape"
+                except ValueError:
+                    continue
+    except Exception as exc:  # pragma: no cover
+        logger.debug("Investing.com scrape error: %s", exc)
     return None
 
 
@@ -115,6 +172,8 @@ def _cboe_api() -> Optional[Tuple[float, str]]:
 FETCH_CHAIN: Tuple[Tuple[str, Fetcher], ...] = (
     ("yfinance-intraday", _yf_intraday),
     ("yfinance-daily", _yf_daily),
+    ("cnbc-scrape", _cnbc_scrape),
+    ("investing-scrape", _investing_scrape),
     ("yahoo-direct", _yahoo_direct),
     ("cboe", _cboe_api),
 )
