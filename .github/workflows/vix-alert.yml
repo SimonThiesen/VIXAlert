@@ -56,4 +56,5 @@ jobs:
       - name: Log below-threshold info
         if: steps.vix.outputs.exceeded != 'true'
         run: |
-          echo "VIX (${steps.vix.outputs.value}) below threshold 35. No notification sent."
+          value="${{ steps.vix.outputs.value }}"
+          echo "VIX ($value) below threshold 35. No notification sent."
