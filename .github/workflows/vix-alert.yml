@@ -1,0 +1,59 @@
+name: VIX Alert
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # At minute 0 of every hour
+  workflow_dispatch:
+
+concurrency:
+  group: vix-alert
+  cancel-in-progress: false
+
+jobs:
+  check-vix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch VIX value
+        id: vix
+        run: |
+          python vix_alert.py > result.json
+          echo "raw_output<<EOF" >> "$GITHUB_OUTPUT"
+          cat result.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          exceeded=$(jq -r '.exceeded' result.json)
+          value=$(jq -r '.vix' result.json)
+          echo "exceeded=$exceeded" >> "$GITHUB_OUTPUT"
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
+      - name: Telegram alert
+        if: steps.vix.outputs.exceeded == 'true'
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then echo "Telegram secrets not set; skipping."; exit 0; fi
+          value=${{ steps.vix.outputs.value }}
+          msg="VIX ${value} >= 35 (threshold exceeded)."
+          curl -s "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            -d chat_id=${TELEGRAM_CHAT_ID} \
+            -d text="${msg}" \
+            -d disable_web_page_preview=true \
+            -d parse_mode=Markdown || echo "Telegram send failed"
+
+      - name: Log below-threshold info
+        if: steps.vix.outputs.exceeded != 'true'
+        run: |
+          echo "VIX (${steps.vix.outputs.value}) below threshold 35. No notification sent."
